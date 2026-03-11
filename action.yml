@@ -46,6 +46,10 @@ inputs:
     description: 'Post cost breakdown as PR comment'
     required: false
     default: 'true'
+  api-url:
+    description: 'CostGuard API URL (override for custom deployments)'
+    required: false
+    default: 'https://api.skyxops.com'
   extra-args:
     description: 'Extra CLI flags (advanced escape hatch)'
     required: false
@@ -77,6 +81,7 @@ runs:
       shell: bash
       env:
         COSTGUARD_API_KEY: ${{ inputs.api-key }}
+        COSTGUARD_API_URL: ${{ inputs.api-url }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         # Build CLI flags
