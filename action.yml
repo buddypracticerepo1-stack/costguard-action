@@ -1,0 +1,142 @@
+name: 'CostGuard'
+description: 'Shift-left cost governance for Terraform and CloudFormation. Reviews infrastructure costs on every PR.'
+author: 'SKYXOPS'
+
+branding:
+  icon: 'dollar-sign'
+  color: 'green'
+
+inputs:
+  plan-path:
+    description: 'Path to Terraform plan JSON or CloudFormation changeset/template JSON'
+    required: false
+    default: 'plan.json'
+  budget-code:
+    description: 'Budget code for cost validation (e.g. CS-FY2026-BU105-M03)'
+    required: false
+    default: ''
+  api-key:
+    description: 'CostGuard API key'
+    required: true
+  github-token:
+    description: 'GitHub token for posting PR comments'
+    required: false
+    default: ${{ github.token }}
+  skip-budget:
+    description: 'Skip budget validation (pricing-only mode)'
+    required: false
+    default: 'false'
+  skip-narrative:
+    description: 'Skip AI analysis (faster runs)'
+    required: false
+    default: 'false'
+  skip-guardrails:
+    description: 'Skip guardrail evaluation'
+    required: false
+    default: 'false'
+  auto-approve:
+    description: 'Pass pipeline when no budget is found'
+    required: false
+    default: 'false'
+  format:
+    description: 'Comment format: markdown or terminal'
+    required: false
+    default: 'markdown'
+  post-comment:
+    description: 'Post cost breakdown as PR comment'
+    required: false
+    default: 'true'
+  extra-args:
+    description: 'Extra CLI flags (advanced escape hatch)'
+    required: false
+    default: ''
+
+outputs:
+  decision:
+    description: 'CostGuard decision: ALLOW, WARN, or BLOCK'
+    value: ${{ steps.costguard.outputs.decision }}
+  monthly-cost:
+    description: 'Estimated monthly cost'
+    value: ${{ steps.costguard.outputs.monthly_cost }}
+  result-file:
+    description: 'Path to the cached result JSON'
+    value: ${{ steps.costguard.outputs.result_file }}
+  report-file:
+    description: 'Path to the HTML report'
+    value: ${{ steps.costguard.outputs.report_file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install CostGuard CLI
+      shell: bash
+      run: pip install --quiet costguard-cli
+
+    - name: Run CostGuard
+      id: costguard
+      shell: bash
+      env:
+        COSTGUARD_API_KEY: ${{ inputs.api-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        # Build CLI flags
+        OPTS=""
+        [ "${{ inputs.skip-budget }}" = "true" ] && OPTS="$OPTS --skip-budget"
+        [ "${{ inputs.skip-narrative }}" = "true" ] && OPTS="$OPTS --skip-narrative"
+        [ "${{ inputs.skip-guardrails }}" = "true" ] && OPTS="$OPTS --skip-guardrails"
+        [ "${{ inputs.auto-approve }}" = "true" ] && OPTS="$OPTS --auto-approve"
+        [ "${{ inputs.post-comment }}" = "true" ] && OPTS="$OPTS --post-comment"
+
+        BUDGET_FLAG=""
+        if [ -n "${{ inputs.budget-code }}" ]; then
+          BUDGET_FLAG="--budget-code ${{ inputs.budget-code }}"
+        fi
+
+        # Run CostGuard — validate cost, post PR comment, cache result
+        EXIT_CODE=0
+        costguard-validate \
+          --plan "${{ inputs.plan-path }}" \
+          $BUDGET_FLAG \
+          --format "${{ inputs.format }}" \
+          --cache-path costguard-result.json \
+          $OPTS ${{ inputs.extra-args }} || EXIT_CODE=$?
+
+        # Parse decision from exit code
+        case $EXIT_CODE in
+          0) DECISION="ALLOW" ;;
+          2) DECISION="WARN" ;;
+          *) DECISION="BLOCK" ;;
+        esac
+
+        # Parse monthly cost from cached result
+        MONTHLY_COST=""
+        if [ -f costguard-result.json ]; then
+          MONTHLY_COST=$(python3 -c "
+        import json
+        try:
+            d = json.load(open('costguard-result.json'))
+            print(d.get('total_monthly_cost', d.get('pricing', {}).get('total_monthly_cost', 'N/A')))
+        except: print('N/A')
+        " 2>/dev/null || echo "N/A")
+        fi
+
+        # Set outputs
+        echo "decision=$DECISION" >> $GITHUB_OUTPUT
+        echo "monthly_cost=$MONTHLY_COST" >> $GITHUB_OUTPUT
+        echo "result_file=costguard-result.json" >> $GITHUB_OUTPUT
+        echo "report_file=costguard-report.html" >> $GITHUB_OUTPUT
+
+        # Generate HTML report from cache
+        if [ -f costguard-result.json ]; then
+          costguard-validate \
+            --cached costguard-result.json \
+            --format html \
+            --output-file costguard-report.html 2>/dev/null || true
+        fi
+
+        # Exit with original code (WARN=2 is still success for GitHub)
+        if [ $EXIT_CODE -eq 2 ]; then
+          echo "::warning::CostGuard decision: WARN — review recommended"
+          exit 0
+        fi
+        exit $EXIT_CODE

@@ -1,0 +1,50 @@
+# CostGuard — CloudFormation Change Set
+#
+# Creates a change set, exports as JSON, then runs CostGuard review
+
+name: CostGuard
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  cfn-changeset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: |
+          aws cloudformation create-change-set \
+            --stack-name my-stack \
+            --template-body file://cloudformation/template.yaml \
+            --change-set-name cost-review-${{ github.run_id }} \
+            --capabilities CAPABILITY_NAMED_IAM
+
+          aws cloudformation wait change-set-create-complete \
+            --stack-name my-stack \
+            --change-set-name cost-review-${{ github.run_id }}
+
+          aws cloudformation describe-change-set \
+            --stack-name my-stack \
+            --change-set-name cost-review-${{ github.run_id }} \
+            > changeset.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: changeset
+          path: changeset.json
+
+  cost-review:
+    needs: cfn-changeset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: changeset
+      - uses: buddypracticerepo1-stack/costguard-action@v1
+        with:
+          plan-path: changeset.json
+          api-key: ${{ secrets.COSTGUARD_API_KEY }}
+          budget-code: ${{ secrets.COSTGUARD_BUDGET_CODE }}

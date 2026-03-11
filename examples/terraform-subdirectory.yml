@@ -1,0 +1,39 @@
+# CostGuard — Terraform Subdirectory
+#
+# Terraform files in infra/production/, plan saved with full path
+
+name: CostGuard
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: |
+          terraform init
+          terraform plan -out=tfplan
+          terraform show -json tfplan > plan.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plan
+          path: infra/production/plan.json
+
+  cost-review:
+    needs: terraform-plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: plan
+      - uses: buddypracticerepo1-stack/costguard-action@v1
+        with:
+          plan-path: plan.json
+          api-key: ${{ secrets.COSTGUARD_API_KEY }}
+          budget-code: ${{ secrets.COSTGUARD_BUDGET_CODE }}
