@@ -32,6 +32,8 @@ Go to **Settings → Secrets and variables → Actions** and add:
 
 ### 2. Create workflow
 
+> **Important:** The `permissions:` block with `pull-requests: write` is required for CostGuard to post PR comments. Without it, the default `GITHUB_TOKEN` has read-only access and comment posting will fail with a 403 error.
+
 **Terraform** — `.github/workflows/costguard.yml`:
 
 ```yaml
@@ -39,6 +41,10 @@ name: CostGuard
 on:
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   terraform-plan:
@@ -76,6 +82,10 @@ name: CostGuard
 on:
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   cfn-changeset:
