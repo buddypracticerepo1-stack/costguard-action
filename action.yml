@@ -1,6 +1,6 @@
 name: 'CostGuard'
 description: 'Shift-left cost governance for Terraform and CloudFormation. Reviews infrastructure costs on every PR.'
-author: 'SKYXOPS'
+author: 'costguard'
 
 branding:
   icon: 'dollar-sign'
@@ -47,9 +47,9 @@ inputs:
     required: false
     default: 'true'
   api-url:
-    description: 'CostGuard API URL (override for custom deployments)'
+    description: 'CostGuard API URL'
     required: false
-    default: 'https://api.skyxops.com'
+    default: ''
   extra-args:
     description: 'Extra CLI flags (advanced escape hatch)'
     required: false
@@ -145,3 +145,13 @@ runs:
           exit 0
         fi
         exit $EXIT_CODE
+
+    - name: Upload CostGuard Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: costguard-report
+        path: |
+          costguard-result.json
+          costguard-report.html
+        if-no-files-found: ignore
