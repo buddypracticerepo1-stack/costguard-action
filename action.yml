@@ -47,9 +47,9 @@ inputs:
     required: false
     default: 'true'
   api-url:
-    description: 'CostGuard API URL'
+    description: 'CostGuard API URL (override for custom deployments)'
     required: false
-    default: ''
+    default: 'https://4tm9xj5nv0.execute-api.us-east-1.amazonaws.com/rnd'
   extra-args:
     description: 'Extra CLI flags (advanced escape hatch)'
     required: false
