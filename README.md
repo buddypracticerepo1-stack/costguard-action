@@ -6,7 +6,7 @@
 
 > Know your infrastructure costs **before** you merge.
 
-CostGuard reviews every PR for cost impact. It works with both **Terraform** (`plan.json`) and **CloudFormation** (`changeset.json` or `template.json`) — auto-detected, no extra config.
+CostGuard reviews every PR for cost impact. It works with both **Terraform** (`plan.json`) and **CloudFormation** (`changeset.json`) — auto-detected, no extra config.
 
 On every PR push, CostGuard:
 - Posts a **cost breakdown** as a PR comment (per-resource, with regions)
@@ -26,7 +26,7 @@ Go to **Settings → Secrets and variables → Actions** and add:
 | Secret | Description |
 |--------|-------------|
 | `COSTGUARD_API_KEY` | Your CostGuard API key |
-| `COSTGUARD_BUDGET_CODE` | Your budget code, e.g. `CS-FY2026-BU105-M03` |
+| `COSTGUARD_BUDGET_CODE` | Your budget code from CostGuard dashboard (e.g. `CS-FY2026-BU105-M03`). Optional — omit to skip budget validation |
 
 > `GITHUB_TOKEN` is provided automatically — no setup needed.
 
@@ -52,6 +52,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+      # Add your AWS credentials step here, e.g.:
+      # - uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+      #     aws-region: us-east-1
       - run: |
           terraform init
           terraform plan -out=tfplan
@@ -75,46 +80,11 @@ jobs:
           budget-code: ${{ secrets.COSTGUARD_BUDGET_CODE }}
 ```
 
-**CloudFormation** — `.github/workflows/costguard.yml`:
+**CloudFormation** — If your pipeline already generates `changeset.json`, just add the cost-review job:
 
 ```yaml
-name: CostGuard
-on:
-  pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  cfn-changeset:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
-      - run: |
-          aws cloudformation create-change-set \
-            --stack-name my-stack \
-            --template-body file://template.yaml \
-            --change-set-name cost-review-${{ github.run_id }}
-          aws cloudformation wait change-set-create-complete \
-            --stack-name my-stack \
-            --change-set-name cost-review-${{ github.run_id }}
-          aws cloudformation describe-change-set \
-            --stack-name my-stack \
-            --change-set-name cost-review-${{ github.run_id }} \
-            > changeset.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: changeset
-          path: changeset.json
-
   cost-review:
-    needs: cfn-changeset
+    needs: cfn-changeset           # your job that outputs changeset.json
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -126,6 +96,8 @@ jobs:
           api-key: ${{ secrets.COSTGUARD_API_KEY }}
           budget-code: ${{ secrets.COSTGUARD_BUDGET_CODE }}
 ```
+
+> Generate `changeset.json` with: `aws cloudformation describe-change-set --change-set-name <arn> > changeset.json`
 
 ### 3. Protect your main branch
 
@@ -167,13 +139,25 @@ CostGuard posts **one comment per PR** and updates it on every push. No duplicat
 
 ---
 
+## What You'll See
+
+On every PR, CostGuard posts a comment with:
+- **Decision badge** — ALLOW (green), WARN (yellow), or BLOCK (red)
+- **Total monthly cost** — estimated infrastructure spend
+- **Per-resource breakdown** — cost per resource with region and pricing details
+- **Budget status** — within budget, near limit, or over budget
+- **AI recommendations** — optimization suggestions to reduce costs
+
+The comment updates automatically on each push — no duplicates.
+
+---
+
 ## Supported IaC Types
 
 | Type | Input File | How to generate |
 |------|-----------|-----------------|
 | **Terraform** | `plan.json` | `terraform show -json tfplan > plan.json` |
 | **CloudFormation Changeset** | `changeset.json` | `aws cloudformation describe-change-set > changeset.json` |
-| **CloudFormation Template** | `template.json` | Your CloudFormation template (JSON) |
 
 CostGuard auto-detects the type from file content.
 
@@ -193,6 +177,7 @@ CostGuard auto-detects the type from file content.
 | `auto-approve` | No | `false` | Pass when no budget found |
 | `format` | No | `markdown` | Comment format: `markdown` or `terminal` |
 | `post-comment` | No | `true` | Post cost breakdown as PR comment |
+| `api-url` | No | `https://api.skyxops.com` | CostGuard API URL (for custom deployments) |
 | `extra-args` | No | `""` | Extra CLI flags (escape hatch) |
 
 ## Outputs
