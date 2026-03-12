@@ -177,7 +177,7 @@ CostGuard auto-detects the type from file content.
 | `auto-approve` | No | `false` | Pass when no budget found |
 | `format` | No | `markdown` | Comment format: `markdown` or `terminal` |
 | `post-comment` | No | `true` | Post cost breakdown as PR comment |
-| `api-url` | No | `https://api.skyxops.com` | CostGuard API URL (for custom deployments) |
+| `api-url` | No | *(built-in)* | CostGuard API URL (override for custom deployments) |
 | `extra-args` | No | `""` | Extra CLI flags (escape hatch) |
 
 ## Outputs
